@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: core-platform
+  datasource:
+    # Mirrors the .NET "CorePlatformConnectionString" (server=localhost;database=TimeSheet).
+    url: jdbc:mysql://localhost:3306/TimeSheet?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: root
+    password: Thiendia@95
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    # The schema is owned by the existing database (created by EF Core migrations),
+    # so Hibernate must never touch DDL. Use "validate" if you want a startup schema check.
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+    show-sql: false
+  jackson:
+    # Mirror ASP.NET Core "web defaults": camelCase JSON (Jackson default) with
+    # case-insensitive property and enum binding on input.
+    mapper:
+      accept-case-insensitive-enums: true
+      accept-case-insensitive-properties: true
+
+# Optional API-key gate (see ApiKeyFilter). Empty = feature disabled, like the .NET default.
+app:
+  api-key: ""
+
+logging:
+  level:
+    root: INFO
+    org.springframework: WARN
+    org.hibernate.SQL: WARN
+
+# springdoc / Swagger UI available at /swagger-ui.html and /v3/api-docs
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
