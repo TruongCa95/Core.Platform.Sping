@@ -4,11 +4,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import vn.aequitas.coreplatform.application.common.exception.DuplicateNameException;
 import vn.aequitas.coreplatform.application.common.exception.NotFoundException;
-import vn.aequitas.coreplatform.application.common.validation.ValidationException;
+
+import java.util.stream.Collectors;
 
 /**
  * Central exception-to-HTTP mapping, the counterpart of the .NET
@@ -25,10 +28,14 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.CONFLICT, message(ex, "Duplicate data error."));
     }
 
-    /** Validation failure -> 400 (mirrors FluentValidation's {@code ValidationException}). */
-    @ExceptionHandler(ValidationException.class)
-    public ResponseEntity<ErrorResponse> handleValidation(ValidationException ex) {
-        return build(HttpStatus.BAD_REQUEST, message(ex, "Validation failed."));
+    /** Bean-validation failure on a request body -> 400 (replaces FluentValidation's {@code ValidationException}). */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex) {
+        String details = ex.getBindingResult().getFieldErrors().stream()
+                .map(GlobalExceptionHandler::formatFieldError)
+                .collect(Collectors.joining(System.lineSeparator()));
+        String message = "Validation failed: " + System.lineSeparator() + details;
+        return build(HttpStatus.BAD_REQUEST, message);
     }
 
     /** Invalid argument -> 400 (mirrors {@code ArgumentException}). */
@@ -48,6 +55,10 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleUnexpected(Exception ex) {
         log.error("Unhandled exception caught by advice.", ex);
         return build(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred.");
+    }
+
+    private static String formatFieldError(FieldError error) {
+        return " -- " + error.getField() + ": " + error.getDefaultMessage();
     }
 
     private static String message(Exception ex, String fallback) {

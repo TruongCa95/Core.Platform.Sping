@@ -4,7 +4,7 @@ import org.springframework.stereotype.Service;
 import vn.aequitas.coreplatform.application.timesheet.dto.CalculationSalaryRequest;
 import vn.aequitas.coreplatform.application.timesheet.dto.CalculationSalaryResponse;
 import vn.aequitas.coreplatform.domain.entity.timesheet.Salary;
-import vn.aequitas.coreplatform.domain.repository.UnitOfWork;
+import vn.aequitas.coreplatform.domain.repository.SalaryRepository;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -23,10 +23,10 @@ public class CalculationSalaryServiceImpl implements CalculationSalaryService {
 
     private static final int MAX = 99;
 
-    private final UnitOfWork unitOfWork;
+    private final SalaryRepository salaries;
 
-    public CalculationSalaryServiceImpl(UnitOfWork unitOfWork) {
-        this.unitOfWork = unitOfWork;
+    public CalculationSalaryServiceImpl(SalaryRepository salaries) {
+        this.salaries = salaries;
     }
 
     @Override
@@ -36,10 +36,10 @@ public class CalculationSalaryServiceImpl implements CalculationSalaryService {
             return result;
         }
 
-        List<Salary> salaries = unitOfWork.salaries().getAll();
+        List<Salary> salaryRows = salaries.findAll();
 
         for (CalculationSalaryRequest request : requests) {
-            List<Salary> salaryList = salaries.stream()
+            List<Salary> salaryList = salaryRows.stream()
                     .filter(s -> s.getLevel() == request.getLevel())
                     .toList();
             if (salaryList.isEmpty()) {

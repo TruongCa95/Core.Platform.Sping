@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Port of the .NET {@code CalculationSalaryServiceTests}. {@code calculateKi} is
- * pure and never touches the unit of work, so a {@code null} dependency is safe.
+ * pure and never touches the repository, so a {@code null} dependency is safe.
  */
 class CalculationSalaryServiceImplTest {
 

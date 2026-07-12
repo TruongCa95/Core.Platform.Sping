@@ -1,11 +1,12 @@
-package vn.aequitas.coreplatform.application.timesheet.query.getlisttimesheet;
+package vn.aequitas.coreplatform.application.timesheet.service;
 
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-import vn.aequitas.coreplatform.application.common.mediator.RequestHandler;
 import vn.aequitas.coreplatform.application.timesheet.dto.TimeSheetDTO;
 import vn.aequitas.coreplatform.application.timesheet.dto.TimesheetReviewDTO;
+import vn.aequitas.coreplatform.application.timesheet.query.getlisttimesheet.PagedTimesheetResult;
+import vn.aequitas.coreplatform.application.timesheet.query.getlisttimesheet.TimesheetResult;
 import vn.aequitas.coreplatform.domain.entity.timesheet.ClassRoom;
 import vn.aequitas.coreplatform.domain.entity.timesheet.ClassRoomTimeSheet;
 import vn.aequitas.coreplatform.domain.entity.timesheet.Salary;
@@ -13,7 +14,12 @@ import vn.aequitas.coreplatform.domain.entity.timesheet.Students;
 import vn.aequitas.coreplatform.domain.entity.timesheet.TimeSheet;
 import vn.aequitas.coreplatform.domain.entity.timesheet.TimesheetReview;
 import vn.aequitas.coreplatform.domain.enums.LevelEnums;
-import vn.aequitas.coreplatform.domain.repository.UnitOfWork;
+import vn.aequitas.coreplatform.domain.repository.ClassRoomRepository;
+import vn.aequitas.coreplatform.domain.repository.ClassRoomTimeSheetRepository;
+import vn.aequitas.coreplatform.domain.repository.SalaryRepository;
+import vn.aequitas.coreplatform.domain.repository.StudentsRepository;
+import vn.aequitas.coreplatform.domain.repository.TimeSheetRepository;
+import vn.aequitas.coreplatform.domain.repository.TimesheetReviewRepository;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -22,13 +28,15 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * Port of the .NET {@code GetListTimesheetQueryHandler}.
+ * Read-side timesheet listing. Port of the former {@code GetListTimesheetQueryHandler}.
  *
  * <p>The original composed the result with EF/LINQ joins translated to SQL and then
  * materialized; here the same joins are performed in memory after loading the
@@ -36,21 +44,36 @@ import java.util.stream.Collectors;
  * level/student-count with a max tier, a 50,000 VLB allowance, a 2% charity tax,
  * and month/year grouping ordered most-recent-first.</p>
  */
-@Component
-public class GetListTimesheetQueryHandler implements RequestHandler<GetListTimesheetQuery, PagedTimesheetResult> {
+@Service
+public class TimesheetQueryService {
 
     private static final DateTimeFormatter MONTH_ABBR =
-            DateTimeFormatter.ofPattern("MMM", java.util.Locale.ENGLISH);
+            DateTimeFormatter.ofPattern("MMM", Locale.ENGLISH);
     private static final DateTimeFormatter MONTH_YEAR =
-            DateTimeFormatter.ofPattern("MMM yyyy", java.util.Locale.ENGLISH);
+            DateTimeFormatter.ofPattern("MMM yyyy", Locale.ENGLISH);
     private static final BigDecimal VLB_ALLOWANCE = new BigDecimal("50000");
     private static final BigDecimal TWO = new BigDecimal("2");
     private static final BigDecimal HUNDRED = new BigDecimal("100");
 
-    private final UnitOfWork unitOfWork;
+    private final TimeSheetRepository timeSheets;
+    private final ClassRoomRepository classrooms;
+    private final ClassRoomTimeSheetRepository classRoomTimeSheets;
+    private final StudentsRepository students;
+    private final TimesheetReviewRepository timesheetReviews;
+    private final SalaryRepository salaries;
 
-    public GetListTimesheetQueryHandler(UnitOfWork unitOfWork) {
-        this.unitOfWork = unitOfWork;
+    public TimesheetQueryService(TimeSheetRepository timeSheets,
+                                 ClassRoomRepository classrooms,
+                                 ClassRoomTimeSheetRepository classRoomTimeSheets,
+                                 StudentsRepository students,
+                                 TimesheetReviewRepository timesheetReviews,
+                                 SalaryRepository salaries) {
+        this.timeSheets = timeSheets;
+        this.classrooms = classrooms;
+        this.classRoomTimeSheets = classRoomTimeSheets;
+        this.students = students;
+        this.timesheetReviews = timesheetReviews;
+        this.salaries = salaries;
     }
 
     /** Flattened classroom-timesheet row, before salary computation. */
@@ -58,20 +81,19 @@ public class GetListTimesheetQueryHandler implements RequestHandler<GetListTimes
                        int numberOfStudent, LevelEnums level, String classCode, List<TimesheetReviewDTO> reviews) {
     }
 
-    @Override
     @Transactional(readOnly = true)
-    public PagedTimesheetResult handle(GetListTimesheetQuery request) {
+    public PagedTimesheetResult getList(String month, Integer year, int page, int pageSize) {
         // --- Load the tables and index them for the in-memory joins ---
-        List<ClassRoomTimeSheet> links = unitOfWork.classRoomTimeSheets()
-                .getListByCondition((root, query, cb) -> cb.isNotNull(root.get("timeSheetId")));
+        List<ClassRoomTimeSheet> links = classRoomTimeSheets.findAll(
+                (root, query, cb) -> cb.isNotNull(root.get("timeSheetId")));
 
-        Map<UUID, TimeSheet> timesheetById = unitOfWork.timeSheets().getAll().stream()
+        Map<UUID, TimeSheet> timesheetById = timeSheets.findAll().stream()
                 .collect(Collectors.toMap(TimeSheet::getId, Function.identity(), (a, b) -> a));
-        Map<UUID, ClassRoom> classroomById = unitOfWork.classrooms().getAll().stream()
+        Map<UUID, ClassRoom> classroomById = classrooms.findAll().stream()
                 .collect(Collectors.toMap(ClassRoom::getId, Function.identity(), (a, b) -> a));
-        Map<UUID, String> studentNameById = unitOfWork.students().getAll().stream()
+        Map<UUID, String> studentNameById = students.findAll().stream()
                 .collect(Collectors.toMap(Students::getId, Students::getName, (a, b) -> a));
-        Map<UUID, List<TimesheetReview>> reviewsByTimesheet = unitOfWork.timesheetReviews().getAll().stream()
+        Map<UUID, List<TimesheetReview>> reviewsByTimesheet = timesheetReviews.findAll().stream()
                 .collect(Collectors.groupingBy(TimesheetReview::getTimesheetId));
 
         // --- Inner-join links -> timesheet -> classroom, group-join the reviews ---
@@ -97,28 +119,26 @@ public class GetListTimesheetQueryHandler implements RequestHandler<GetListTimes
                 })
                 .collect(Collectors.toList());
 
-        List<Salary> salaries = unitOfWork.salaries()
-                .getListByCondition((root, query, cb) -> cb.equal(root.get("isActive"), true));
+        List<Salary> salaryRows = salaries.findAll(
+                (root, query, cb) -> cb.equal(root.get("isActive"), true));
 
         // --- Optional month/year filter (only when at least one is supplied) ---
-        String reqMonth = request.getMonth();
-        Integer reqYear = request.getYear();
-        if (StringUtils.hasText(reqMonth) || reqYear != null) {
+        if (StringUtils.hasText(month) || year != null) {
             rows = rows.stream().filter(row -> {
                 boolean monthMatch = true;
                 boolean yearMatch = true;
-                if (StringUtils.hasText(reqMonth)) {
-                    monthMatch = row.date().format(MONTH_ABBR).equalsIgnoreCase(reqMonth);
+                if (StringUtils.hasText(month)) {
+                    monthMatch = row.date().format(MONTH_ABBR).equalsIgnoreCase(month);
                 }
-                if (reqYear != null) {
-                    yearMatch = row.date().getYear() == reqYear;
+                if (year != null) {
+                    yearMatch = row.date().getYear() == year;
                 }
                 return monthMatch && yearMatch;
             }).collect(Collectors.toList());
         }
 
         // --- Highest student-count tier available per level ---
-        Map<LevelEnums, Integer> maxStudentByLevel = salaries.stream()
+        Map<LevelEnums, Integer> maxStudentByLevel = salaryRows.stream()
                 .collect(Collectors.groupingBy(Salary::getLevel,
                         Collectors.mapping(Salary::getNumberOfStudent,
                                 Collectors.reducing(0, Integer::max))));
@@ -126,7 +146,7 @@ public class GetListTimesheetQueryHandler implements RequestHandler<GetListTimes
         // --- Compute salary/allowance per row, ordered by date descending ---
         List<TimeSheetDTO> computed = rows.stream()
                 .map(row -> {
-                    List<Salary> salaryList = salaries.stream()
+                    List<Salary> salaryList = salaryRows.stream()
                             .filter(s -> s.getLevel() == row.level())
                             .toList();
                     BigDecimal amount = BigDecimal.ZERO;
@@ -185,27 +205,27 @@ public class GetListTimesheetQueryHandler implements RequestHandler<GetListTimes
         }
 
         // --- Paginate the month groups ---
-        int page = request.getPage() <= 0 ? 1 : request.getPage();
-        int pageSize = request.getPageSize() <= 0 ? 20 : request.getPageSize();
+        int resolvedPage = page <= 0 ? 1 : page;
+        int resolvedPageSize = pageSize <= 0 ? 20 : pageSize;
         int totalCount = groupedResult.size();
         List<TimesheetResult> pageItems = groupedResult.stream()
-                .skip((long) (page - 1) * pageSize)
-                .limit(pageSize)
+                .skip((long) (resolvedPage - 1) * resolvedPageSize)
+                .limit(resolvedPageSize)
                 .toList();
 
         return PagedTimesheetResult.builder()
                 .results(pageItems)
-                .page(page)
-                .pageSize(pageSize)
+                .page(resolvedPage)
+                .pageSize(resolvedPageSize)
                 .totalCount(totalCount)
-                .totalPages((int) Math.ceil(totalCount / (double) pageSize))
+                .totalPages((int) Math.ceil(totalCount / (double) resolvedPageSize))
                 .build();
     }
 
     private static BigDecimal sum(List<TimeSheetDTO> items, Function<TimeSheetDTO, BigDecimal> selector) {
         return items.stream()
                 .map(selector)
-                .filter(java.util.Objects::nonNull)
+                .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 }

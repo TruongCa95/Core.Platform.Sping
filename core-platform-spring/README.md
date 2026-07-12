@@ -1,6 +1,6 @@
 # Core Platform — Spring Boot
 
-Cổng chuyển đổi (port) của dự án **.NET 8 `Core.Platform`** (Timesheet Management API) sang **Spring Boot 3.3 / Java 21**, giữ nguyên kiến trúc **Clean Architecture + DDD + CQRS**.
+Cổng chuyển đổi (port) của dự án **.NET 8 `Core.Platform`** (Timesheet Management API) sang **Spring Boot 3.3 / Java 21**, theo **Clean Architecture + DDD**, tách **Command/Query** bằng **service thuần Spring** (idiomatic Spring Boot: `@Service`, Bean Validation, Spring Data JPA).
 
 > Tài liệu thiết kế chi tiết: [`docs/DESIGN.md`](docs/DESIGN.md)
 
@@ -77,12 +77,14 @@ java -jar target/core-platform-1.0.0.jar
 ```
 src/main/java/vn/aequitas/coreplatform/
 ├── CorePlatformApplication.java        # entry point (≈ Program.cs)
-├── domain/                             # Entities, Enums, ports (Repository/UnitOfWork), utils
+├── domain/                             # Entities, Enums, Spring Data repositories, utils
 ├── application/
-│   ├── common/                         # mediator, bus, validation, exception, dto
-│   └── timesheet/                      # command/query/handler, dto, service, validator, helper
-├── infrastructure/                     # mediator impl, command/query runner, JPA repo + UnitOfWork
+│   ├── common/                         # exception, dto (PagedResult)
+│   └── timesheet/                      # command (request DTO), query (result DTO),
+│                                       #   service (Command/Query per aggregate), dto, helper
 └── web/                                # controller, filter (API key), advice (error handler)
 ```
+
+> Controller inject thẳng các `@Service` (ví dụ `ClassroomCommandService`, `TimesheetQueryService`); không còn tầng mediator/bus/infrastructure. Repository là interface Spring Data trong `domain/`, impl do Spring sinh runtime.
 
 Xem chi tiết ánh xạ .NET → Spring trong [`docs/DESIGN.md`](docs/DESIGN.md).
